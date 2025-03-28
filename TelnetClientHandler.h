@@ -21,6 +21,22 @@ private:
     std::string username; // To track logged-in user
 
 public:
+    // Add to TelnetClientHandler.h in the public section
+    bool isLoggedIn() const
+    {
+        return !username.empty();
+    }
+
+    // Add this getter for the username
+    std::string getUsername() const
+    {
+        return username;
+    }
+    // Add to TelnetClientHandler.h in the public section
+    bool isConnected() const
+    {
+        return running && clientSocket >= 0;
+    }
     TelnetClientHandler(int socket)
         : clientSocket(socket), running(true), username("")
     {
@@ -733,6 +749,20 @@ std::string sendMail(const std::string& recipient, const std::string& title) {
 
     return "Mail sent to " + recipient;
 }
+    // Update user info
+    std::string setUserInfo(const std::string& info) {
+        if (username == "guest") {
+            return "Guests cannot set personal information. Please register an account.";
+        }
+
+        auto currentUser = UserManager::getInstance().getUserByUsername(username);
+        if (!currentUser) {
+            return "Error: User not found.";
+        }
+
+        currentUser->setInfo(info);
+        return "Your information has been updated.";
+    }
     std::string processCommand(const std::string& command)
     {
         // Split the command into tokens
@@ -804,6 +834,16 @@ std::string sendMail(const std::string& recipient, const std::string& title) {
         }
         else if (cmd == "quiet") {
             return setQuietMode(true);
+        }
+        else if (cmd == "info") {
+            // Extract everything after "info "
+            size_t cmdPos = command.find("info");
+            if (cmdPos == std::string::npos || cmdPos + 5 >= command.length()) {
+                return "Usage: info <message>";
+            }
+
+            std::string infoText = command.substr(cmdPos + 5);
+            return setUserInfo(infoText);
         }
         else if (cmd == "nonquiet") {
             return setQuietMode(false);
@@ -1071,17 +1111,19 @@ std::string sendMail(const std::string& recipient, const std::string& title) {
     }
 
     // Change password
-    std::string changePassword(const std::string& newPassword)
-    {
+    // Change password
+    std::string changePassword(const std::string& newPassword) {
         if (username == "guest") {
             return "Guests cannot change password. Please register an account.";
         }
 
-        if (UserManager::getInstance().changePassword(username, newPassword)) {
-            return "Password changed successfully.";
-        } else {
-            return "Failed to change password.";
+        auto currentUser = UserManager::getInstance().getUserByUsername(username);
+        if (!currentUser) {
+            return "Error: User not found.";
         }
+
+        currentUser->setPassword(newPassword);
+        return "Your password has been changed.";
     }
 
 

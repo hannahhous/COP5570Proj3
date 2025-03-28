@@ -53,6 +53,7 @@ public:
     // Game methods
     void playerDisconnected(std::shared_ptr<User> player);
 
+    bool checkTimeExpired();
     bool makeMove(std::shared_ptr<User> player, int row, int col);
     bool checkWin(int row, int col);
     void resign(std::shared_ptr<User> player);
@@ -116,6 +117,36 @@ void Game::playerDisconnected(std::shared_ptr<User> player) {
     } else if (player->getUsername() == whitePlayer->getUsername()) {
         endGame(blackPlayer->getUsername());
     }
+}
+
+// Call this periodically to check if time has expired
+bool Game::checkTimeExpired() {
+    if (status != GameStatus::PLAYING) {
+        return false;
+    }
+
+    // Calculate time since last move
+    time_t now = time(nullptr);
+    int elapsed = static_cast<int>(now - lastMoveTime);
+
+    // Check current player's time
+    if (currentTurn == StoneColor::BLACK) {
+        int updatedBlackTime = blackTimeUsed + elapsed;
+        if (updatedBlackTime > timeLimit) {
+            std::cout << "Black player time expired: " << updatedBlackTime << " seconds" << std::endl;
+            endGame(whitePlayer->getUsername());
+            return true;
+        }
+    } else {
+        int updatedWhiteTime = whiteTimeUsed + elapsed;
+        if (updatedWhiteTime > timeLimit) {
+            std::cout << "White player time expired: " << updatedWhiteTime << " seconds" << std::endl;
+            endGame(blackPlayer->getUsername());
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool Game::makeMove(std::shared_ptr<User> player, int row, int col) {
@@ -185,7 +216,6 @@ bool Game::makeMove(std::shared_ptr<User> player, int row, int col) {
 
     return true;
 }
-
 // Helper method to check if a position is empty
 bool Game::isPositionEmpty(int row, int col) const {
     if (row < 0 || row >= 15 || col < 0 || col >= 15) {
