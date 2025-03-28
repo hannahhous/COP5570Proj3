@@ -33,6 +33,11 @@ public:
     // Send data to socket with error handling
     static bool sendData(int sock, const std::string& data)
     {
+        // Check for valid socket
+        if (sock < 0) {
+            return false;
+        }
+
         ssize_t total = 0;
         ssize_t bytesleft = data.length();
         ssize_t n;
@@ -49,7 +54,7 @@ public:
                 }
                 else
                 {
-                    perror("send");
+                    // Log the error but don't use perror here
                     return false;
                 }
             }
