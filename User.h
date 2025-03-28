@@ -7,6 +7,11 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <fstream>
+#include <filesystem>
+#include <iostream>
+#include <thread>
+#include <chrono>
 
 class User {
 private:
@@ -26,10 +31,14 @@ private:
     int gameId;
 
 public:
+
+
     User(const std::string& username, const std::string& password, int socket)
         : username(username), password(password), info(""), wins(0), losses(0), rating(1500.0f),
           isQuiet(false), clientSocket(socket), isGuest(username == "guest"),
-          isPlaying(false), isObserving(false), gameId(-1) {}
+          isPlaying(false), isObserving(false), gameId(-1) {
+
+          }
 
     // Getters and setters
     std::string getUsername() const { return username; }
@@ -96,14 +105,41 @@ private:
     std::unordered_map<std::string, std::shared_ptr<User>> users;
     std::unordered_map<int, std::string> socketToUser;
     std::mutex usersMutex;
+    std::thread autosaveThread;
+    std::atomic<bool> running;
+
+    void autosaveLoop() {
+        const int SAVE_INTERVAL_SECONDS = 300; // 5 minutes
+
+        while (running) {
+            std::this_thread::sleep_for(std::chrono::seconds(SAVE_INTERVAL_SECONDS));
+            std::cout << "calling save users" << std::endl;
+
+            saveUsers();
+        }
+    }
 
     // Private constructor for singleton
-    UserManager() {
+    UserManager() : running(true){
         // Create default guest account
         users["guest"] = std::make_shared<User>("guest", "", -1);
+
+        // Load existing users
+        loadUsers();
+
+        // Start autosave thread
+        autosaveThread = std::thread(&UserManager::autosaveLoop, this);
+        autosaveThread.detach();
     }
 
 public:
+
+    ~UserManager() {
+        running = false;
+        std::cout << "calling save users" << std::endl;
+
+        saveUsers(); // Final save on shutdown
+    }
     // Get the singleton instance
     static UserManager& getInstance() {
         static UserManager instance;
@@ -121,8 +157,12 @@ public:
 
         // Create new user
         users[username] = std::make_shared<User>(username, password, socket);
+        socketToUser[socket] = username;
+
 
         // Save user data to disk
+        std::cout << "calling save users" << std::endl;
+
         saveUsers();
 
         return true;
@@ -204,14 +244,235 @@ public:
     }
 
     void saveUsers() {
-        // TODO: Implement user data persistence
-        // Save user data to disk in a format that can be loaded when server restarts
+    std::lock_guard<std::mutex> lock(usersMutex);
+
+    try {
+        // Open file for writing (no directory creation - just use current directory)
+        std::ofstream file("users_data.txt");
+        if (!file.is_open()) {
+            std::cerr << "Failed to open users_data.txt for writing" << std::endl;
+            return;
+        }
+
+        // Write each user (except guest)
+        for (const auto& pair : users) {
+            const auto& user = pair.second;
+
+            // Skip guest account
+            if (user->getUsername() == "guest") {
+                continue;
+            }
+
+            // Write user data in a simple format
+            file << "USER_BEGIN\n";
+            file << "username=" << user->getUsername() << "\n";
+            file << "password=" << user->getPassword() << "\n";
+            file << "info=" << user->getInfo() << "\n";
+            file << "wins=" << user->getWins() << "\n";
+            file << "losses=" << user->getLosses() << "\n";
+            file << "rating=" << user->getRating() << "\n";
+            file << "quiet=" << (user->isInQuietMode() ? "1" : "0") << "\n";
+
+            // Write blocked users
+            file << "blocked_begin\n";
+            for (const auto& blockedUser : user->getBlockedUsers()) {
+                file << blockedUser << "\n";
+            }
+            file << "blocked_end\n";
+
+            file << "USER_END\n";
+        }
+
+        file.close();
+        std::cout << "User data saved successfully." << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error saving users: " << e.what() << std::endl;
+    }
+}
+
+void loadUsers() {
+    std::lock_guard<std::mutex> lock(usersMutex);
+
+    try {
+        // Try to open the file
+        std::ifstream file("users_data.txt");
+        if (!file.is_open()) {
+            std::cout << "No user data file found. Starting with fresh user database." << std::endl;
+            return;
+        }
+
+        std::string line;
+        std::string username, password, info;
+        int wins = 0, losses = 0;
+        float rating = 1500.0f;
+        bool isQuiet = false;
+        std::vector<std::string> blockedUsers;
+        bool inBlockedSection = false;
+        bool inUserSection = false;
+
+        while (std::getline(file, line)) {
+            if (line == "USER_BEGIN") {
+                inUserSection = true;
+                username = password = info = "";
+                wins = losses = 0;
+                rating = 1500.0f;
+                isQuiet = false;
+                blockedUsers.clear();
+                continue;
+            }
+            else if (line == "USER_END") {
+                if (inUserSection) {
+                    // Create user and add to map
+                    auto user = std::make_shared<User>(username, password, -1);
+                    user->setInfo(info);
+
+                    // Set wins and losses manually
+                    for (int i = 0; i < wins; i++) {
+                        user->addWin();
+                    }
+                    for (int i = 0; i < losses; i++) {
+                        user->addLoss();
+                    }
+
+                    user->setQuietMode(isQuiet);
+
+                    // Add blocked users
+                    for (const auto& blockedUser : blockedUsers) {
+                        user->blockUser(blockedUser);
+                    }
+
+                    users[username] = user;
+                    std::cout << "Loaded user: " << username << std::endl;
+                }
+                inUserSection = false;
+                continue;
+            }
+
+            if (inUserSection) {
+                if (line == "blocked_begin") {
+                    inBlockedSection = true;
+                    continue;
+                }
+                else if (line == "blocked_end") {
+                    inBlockedSection = false;
+                    continue;
+                }
+
+                if (inBlockedSection) {
+                    blockedUsers.push_back(line);
+                }
+                else {
+                    // Parse key-value pairs
+                    size_t equalPos = line.find('=');
+                    if (equalPos != std::string::npos) {
+                        std::string key = line.substr(0, equalPos);
+                        std::string value = line.substr(equalPos + 1);
+
+                        if (key == "username") username = value;
+                        else if (key == "password") password = value;
+                        else if (key == "info") info = value;
+                        else if (key == "wins") {
+                            try { wins = std::stoi(value); }
+                            catch (...) { wins = 0; }
+                        }
+                        else if (key == "losses") {
+                            try { losses = std::stoi(value); }
+                            catch (...) { losses = 0; }
+                        }
+                        else if (key == "rating") {
+                            try { rating = std::stof(value); }
+                            catch (...) { rating = 1500.0f; }
+                        }
+                        else if (key == "quiet") isQuiet = (value == "1");
+                    }
+                }
+            }
+        }
+
+        file.close();
+        std::cout << "Loaded " << (users.size() - 1) << " user accounts from disk." << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error loading users: " << e.what() << std::endl;
+    }
+}
+
+bool updateUserInfo(const std::string& username, const std::string& info) {
+    auto user = getUserByUsername(username);
+    if (!user) {
+        return false;
     }
 
-    void loadUsers() {
-        // TODO: Implement user data loading
-        // Load user data from disk when server starts
+    user->setInfo(info);
+    std::cout << "calling save users" << std::endl;
+    saveUsers(); // Save after updating info
+    return true;
+}
+
+bool changePassword(const std::string& username, const std::string& newPassword) {
+    auto user = getUserByUsername(username);
+    if (!user) {
+        return false;
     }
+
+    user->setPassword(newPassword);
+        std::cout << "calling save users" << std::endl;
+
+    saveUsers(); // Save after changing password
+    return true;
+}
+
+// Add this method since it's used in TelnetClientHandler
+std::string getOnlineUsersList() {
+    std::lock_guard<std::mutex> lock(usersMutex);
+
+    // Count regular users
+    std::vector<std::shared_ptr<User>> onlineRegularUsers;
+    for (const auto& pair : socketToUser) {
+        std::string username = pair.second;
+        if (username != "guest" && users.find(username) != users.end()) {
+            onlineRegularUsers.push_back(users[username]);
+        }
+    }
+
+    // Count guest connections
+    int guestCount = 0;
+    for (const auto& pair : socketToUser) {
+        if (pair.second == "guest") {
+            guestCount++;
+        }
+    }
+
+    // If no one is online (neither guests nor regular users), return a message
+    if (onlineRegularUsers.empty() && guestCount == 0) {
+        return "No users online.";
+    }
+
+    std::string result = "Online users:\n";
+
+    // Add regular users to the list
+    for (const auto& user : onlineRegularUsers) {
+        result += "- " + user->getUsername();
+        if (user->isInGame()) {
+            result += " (playing in game " + std::to_string(user->getGameId()) + ")";
+        } else if (user->isUserObserving()) {
+            result += " (observing game " + std::to_string(user->getGameId()) + ")";
+        }
+        result += "\n";
+    }
+
+    // Add guests to the list
+    if (guestCount > 0) {
+        if (guestCount == 1) {
+            result += "- 1 guest\n";
+        } else {
+            result += "- " + std::to_string(guestCount) + " guests\n";
+        }
+    }
+
+    return result;
+}
 };
 
 #endif // USER_H

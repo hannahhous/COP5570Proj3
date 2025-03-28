@@ -8,6 +8,9 @@
 #include "UserManager.h"
 #include "Game.h"
 #include <regex>
+#include <iostream>
+#include <fstream>  // Add this line to include ofstream
+
 
 class TelnetClientHandler {
 private:
@@ -533,6 +536,20 @@ std::string unobserveGame() {
                 return "Usage: login <username> <password>";
             }
             return loginUser(tokens[1], tokens[2]);
+        }
+        else if (cmd == "testsave") {
+            std::cout << "Testing save functionality" << std::endl;
+            std::ofstream testFile("/tmp/test_save.txt");
+            if (testFile.is_open()) {
+                testFile << "Test save at " << time(nullptr) << std::endl;
+                testFile.close();
+                std::cout << "Test file written successfully" << std::endl;
+                return "Test save successful. Check for test_save.txt";
+            } else {
+                std::cout << "Failed to open test file" << std::endl;
+                return "Test save failed. Check server permissions.";
+            }
+            testFile.close();
         }
         else if (cmd == "guest") {
             return loginGuest();
