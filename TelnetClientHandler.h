@@ -7,6 +7,7 @@
 #include <algorithm>
 #include "UserManager.h"
 #include "Game.h"
+#include "Message.h"
 #include <regex>
 #include <iostream>
 #include <fstream>  // Add this line to include ofstream
@@ -576,6 +577,162 @@ std::string kibitzMessage(const std::string& message) {
 
     return "Comment sent.";
 }
+    // Set quiet mode (no broadcast messages)
+    std::string setQuietMode(bool quiet) {
+        auto currentUser = UserManager::getInstance().getUserByUsername(username);
+        if (!currentUser) {
+            return "Error: User not found.";
+        }
+
+        currentUser->setQuietMode(quiet);
+
+        return quiet ? "Quiet mode enabled. You will not receive broadcast messages."
+                     : "Quiet mode disabled. You will receive broadcast messages.";
+    }
+
+    // Block a user
+    std::string blockUser(const std::string& targetUsername) {
+        if (username == "guest") {
+            return "Guests cannot block users. Please register an account.";
+        }
+
+        auto currentUser = UserManager::getInstance().getUserByUsername(username);
+        if (!currentUser) {
+            return "Error: User not found.";
+        }
+
+        auto targetUser = UserManager::getInstance().getUserByUsername(targetUsername);
+        if (!targetUser) {
+            return "User not found: " + targetUsername;
+        }
+
+        // Check if already blocked
+        if (currentUser->isBlocked(targetUsername)) {
+            return targetUsername + " is already blocked.";
+        }
+
+        // Block the user
+        currentUser->blockUser(targetUsername);
+
+        return "Blocked all communication from " + targetUsername + ".";
+    }
+
+    // Unblock a user
+    std::string unblockUser(const std::string& targetUsername) {
+        if (username == "guest") {
+            return "Guests cannot unblock users. Please register an account.";
+        }
+
+        auto currentUser = UserManager::getInstance().getUserByUsername(username);
+        if (!currentUser) {
+            return "Error: User not found.";
+        }
+
+        // Check if actually blocked
+        if (!currentUser->isBlocked(targetUsername)) {
+            return targetUsername + " is not blocked.";
+        }
+
+        // Unblock the user
+        currentUser->unblockUser(targetUsername);
+
+        return "Unblocked communication from " + targetUsername + ".";
+    }
+    // List mail headers
+std::string listMail() {
+    if (username == "guest") {
+        return "Guests cannot use mail. Please register an account.";
+    }
+
+    auto messages = MessageManager::getInstance().getMessages(username);
+
+    if (messages.empty()) {
+        return "Your mailbox is empty.";
+    }
+
+    std::string result = "Mail messages:\n";
+    for (const auto& message : messages) {
+        result += message->getFormattedHeader() + "\n";
+    }
+
+    return result;
+}
+
+// Read a specific mail
+std::string readMail(int messageId) {
+    if (username == "guest") {
+        return "Guests cannot use mail. Please register an account.";
+    }
+
+    auto message = MessageManager::getInstance().getMessage(username, messageId);
+
+    if (!message) {
+        return "Message not found.";
+    }
+
+    message->markAsRead();
+
+    std::string result = "From: " + message->getSender() + "\n";
+    result += "Title: " + message->getTitle() + "\n";
+    result += "---\n";
+    result += message->getContent() + "\n";
+    result += "---\n";
+
+    return result;
+}
+
+// Delete a mail
+std::string deleteMail(int messageId) {
+    if (username == "guest") {
+        return "Guests cannot use mail. Please register an account.";
+    }
+
+    if (MessageManager::getInstance().deleteMessage(username, messageId)) {
+        return "Message deleted.";
+    } else {
+        return "Message not found.";
+    }
+}
+
+// Send a mail
+std::string sendMail(const std::string& recipient, const std::string& title) {
+    if (username == "guest") {
+        return "Guests cannot use mail. Please register an account.";
+    }
+
+    auto recipientUser = UserManager::getInstance().getUserByUsername(recipient);
+    if (!recipientUser) {
+        return "User not found: " + recipient;
+    }
+
+    sendMessage("Enter your message. End with a line containing only a period (.)");
+
+    std::string content;
+    std::string line;
+    while (true) {
+        line = SocketUtils::receiveData(clientSocket, 60000); // 1 minute timeout
+
+        // Clean up line endings
+        if (!line.empty() && line.back() == '\n') line.pop_back();
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+
+        if (line == ".") {
+            break;
+        }
+
+        content += line + "\n";
+    }
+
+    MessageManager::getInstance().sendMessage(username, recipient, title, content);
+
+    // Notify recipient if online
+    if (recipientUser->getSocket() != -1) {
+        std::string notifyMsg = "You have received a new mail from " + username;
+        SocketUtils::sendData(recipientUser->getSocket(), notifyMsg + "\r\n");
+    }
+
+    return "Mail sent to " + recipient;
+}
     std::string processCommand(const std::string& command)
     {
         // Split the command into tokens
@@ -645,8 +802,69 @@ std::string kibitzMessage(const std::string& message) {
             }
             testFile.close();
         }
+        else if (cmd == "quiet") {
+            return setQuietMode(true);
+        }
+        else if (cmd == "nonquiet") {
+            return setQuietMode(false);
+        }
+        else if (cmd == "listmail") {
+            return listMail();
+        }
+        else if (cmd == "readmail") {
+            if (tokens.size() < 2) {
+                return "Usage: readmail <msg_num>";
+            }
+
+            int messageId;
+            try {
+                messageId = std::stoi(tokens[1]);
+            } catch (...) {
+                return "Invalid message number.";
+            }
+
+            return readMail(messageId);
+        }
+        else if (cmd == "deletemail") {
+            if (tokens.size() < 2) {
+                return "Usage: deletemail <msg_num>";
+            }
+
+            int messageId;
+            try {
+                messageId = std::stoi(tokens[1]);
+            } catch (...) {
+                return "Invalid message number.";
+            }
+
+            return deleteMail(messageId);
+        }
+        else if (cmd == "mail") {
+            if (tokens.size() < 3) {
+                return "Usage: mail <id> <title>";
+            }
+
+            std::string recipient = tokens[1];
+
+            // Extract title (everything after the recipient)
+            std::string title = command.substr(command.find(recipient) + recipient.length() + 1);
+
+            return sendMail(recipient, title);
+        }
         else if (cmd == "guest") {
             return loginGuest();
+        }
+        else if (cmd == "block") {
+            if (tokens.size() < 2) {
+                return "Usage: block <id>";
+            }
+            return blockUser(tokens[1]);
+        }
+        else if (cmd == "unblock") {
+            if (tokens.size() < 2) {
+                return "Usage: unblock <id>";
+            }
+            return unblockUser(tokens[1]);
         }
         else if (cmd == "register") {
             if (tokens.size() < 3) {
