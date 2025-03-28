@@ -482,6 +482,100 @@ std::string unobserveGame() {
 
     return boardStr;
 }
+
+    // Add these methods to your TelnetClientHandler class
+
+// Broadcast a message to all online users
+std::string shoutMessage(const std::string& message) {
+    if (username == "guest") {
+        return "Guests cannot shout messages. Please register an account.";
+    }
+
+    // Format: [Shout] <username>: <message>
+    std::string formattedMsg = "[Shout] " + username + ": " + message;
+
+    // Send to all online users except those in quiet mode or who blocked this user
+    auto onlineUsers = UserManager::getInstance().getOnlineUsers();
+    for (const auto& user : onlineUsers) {
+        if (user->getUsername() != username &&
+            user->getSocket() != -1 &&
+            !user->isInQuietMode() &&
+            !user->isBlocked(username)) {
+            SocketUtils::sendData(user->getSocket(), formattedMsg + "\r\n");
+        }
+    }
+
+    return "Message sent.";
+}
+
+// Send a private message to a specific user
+std::string tellMessage(const std::string& recipient, const std::string& message) {
+    if (username == "guest") {
+        return "Guests cannot send private messages. Please register an account.";
+    }
+
+    auto recipientUser = UserManager::getInstance().getUserByUsername(recipient);
+    if (!recipientUser) {
+        return "User not found: " + recipient;
+    }
+
+    if (recipientUser->isBlocked(username)) {
+        return recipient + " has blocked messages from you.";
+    }
+
+    // Format: [Tell] <username>: <message>
+    std::string formattedMsg = "[Tell] " + username + ": " + message;
+
+    // Send to recipient if online
+    if (recipientUser->getSocket() != -1) {
+        SocketUtils::sendData(recipientUser->getSocket(), formattedMsg + "\r\n");
+        return "Message sent to " + recipient + ".";
+    } else {
+        return recipient + " is offline.";
+    }
+}
+
+// Comment on a game being observed
+std::string kibitzMessage(const std::string& message) {
+    auto currentUser = UserManager::getInstance().getUserByUsername(username);
+    if (!currentUser->isUserObserving()) {
+        return "You are not observing a game.";
+    }
+
+    int gameId = currentUser->getGameId();
+    auto game = GameManager::getInstance().getGame(gameId);
+    if (!game) {
+        currentUser->setObserving(false);
+        currentUser->setGameId(-1);
+        return "Error: Game not found.";
+    }
+
+    // Format: [Kibitz] <username>: <message>
+    std::string formattedMsg = "[Kibitz] " + username + ": " + message;
+
+    // Send to all observers of this game
+    for (int observerSocket : game->getObservers()) {
+        if (observerSocket != clientSocket) {
+            auto observerUser = UserManager::getInstance().getUserBySocket(observerSocket);
+            if (observerUser && !observerUser->isInQuietMode() && !observerUser->isBlocked(username)) {
+                SocketUtils::sendData(observerSocket, formattedMsg + "\r\n");
+            }
+        }
+    }
+
+    // Also send to the players if they're not in quiet mode and haven't blocked the user
+    auto blackPlayer = game->getBlackPlayer();
+    if (!blackPlayer->isInQuietMode() && !blackPlayer->isBlocked(username)) {
+        SocketUtils::sendData(blackPlayer->getSocket(), formattedMsg + "\r\n");
+    }
+
+    auto whitePlayer = game->getWhitePlayer();
+    if (!whitePlayer->isInQuietMode() && !whitePlayer->isBlocked(username)) {
+        SocketUtils::sendData(whitePlayer->getSocket(), formattedMsg + "\r\n");
+    }
+
+    return "Comment sent.";
+}
     std::string processCommand(const std::string& command)
     {
         // Split the command into tokens
@@ -618,6 +712,51 @@ std::string unobserveGame() {
         // Process commands for logged-in users
         if (cmd == "who") {
             return UserManager::getInstance().getOnlineUsersList();
+        }
+        // In processCommand method, add:
+        else if (cmd == "shout") {
+            std::string message = command.substr(command.find(' ') + 1);
+
+            if (message.empty()) {
+                return "Usage: shout <message>";
+            }
+
+            return shoutMessage(message);
+        }
+        else if (cmd == "tell") {
+            // Check if there's anything after "tell"
+            size_t cmdPos = command.find("tell");
+            if (cmdPos == std::string::npos || cmdPos + 5 >= command.length()) {
+                return "Usage: tell <name> <message>";
+            }
+
+            // Extract everything after "tell "
+            std::string rest = command.substr(cmdPos + 5);
+
+            // Find the first space after the recipient name
+            size_t spacePos = rest.find_first_of(" \t");
+            if (spacePos == std::string::npos) {
+                return "Usage: tell <name> <message>";
+            }
+
+            // Extract recipient and message
+            std::string recipient = rest.substr(0, spacePos);
+            std::string message = rest.substr(spacePos + 1);
+
+            if (recipient.empty() || message.empty()) {
+                return "Usage: tell <name> <message>";
+            }
+
+            return tellMessage(recipient, message);
+        }
+        else if (cmd == "kibitz" || cmd == "'") {
+            std::string message = command.substr(command.find(' ') + 1);
+
+            if (message.empty()) {
+                return "Usage: kibitz <message> or ' <message>";
+            }
+
+            return kibitzMessage(message);
         }
         else if (cmd == "stats") {
             if (tokens.size() > 1) {
