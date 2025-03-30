@@ -372,6 +372,8 @@ std::vector<std::shared_ptr<Game>> GameManager::getAllGames() {
 void GameManager::cleanupGames() {
     std::lock_guard<std::mutex> lock(gamesMutex);
 
+    std::cout << "in game manager cleanup games" << std::endl;
+
     auto it = games.begin();
     while (it != games.end()) {
         if (it->second->getStatus() == GameStatus::FINISHED) {
