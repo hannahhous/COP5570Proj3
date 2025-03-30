@@ -25,6 +25,8 @@
 class TelnetServer
 {
 public:
+    std::atomic<bool> running;
+
     TelnetServer() : serverSocket(-1), running(false)
     {
     }
@@ -293,9 +295,9 @@ private:
         }
     }
 
+
 private:
     int serverSocket;
-    std::atomic<bool> running;
     std::thread acceptThread;
     std::thread cleanupThread;
     std::thread gameTimeoutThread;

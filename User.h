@@ -246,6 +246,7 @@ public:
 // Replace the saveUsers() and loadUsers() functions in User.h with these improved versions
 
 void saveUsers() {
+  std::cout << "save users" << std::endl;
     std::lock_guard<std::mutex> lock(usersMutex);
 
     try {
