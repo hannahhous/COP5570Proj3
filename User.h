@@ -243,11 +243,13 @@ public:
         return result;
     }
 
-    void saveUsers() {
+// Replace the saveUsers() and loadUsers() functions in User.h with these improved versions
+
+void saveUsers() {
     std::lock_guard<std::mutex> lock(usersMutex);
 
     try {
-        // Open file for writing (no directory creation - just use current directory)
+        // Open file for writing
         std::ofstream file("users_data.txt");
         if (!file.is_open()) {
             std::cerr << "Failed to open users_data.txt for writing" << std::endl;
@@ -284,7 +286,7 @@ public:
         }
 
         file.close();
-        std::cout << "User data saved successfully." << std::endl;
+        std::cout << "User data saved successfully to users_data.txt" << std::endl;
     }
     catch (const std::exception& e) {
         std::cerr << "Error saving users: " << e.what() << std::endl;
@@ -322,10 +324,11 @@ void loadUsers() {
                 continue;
             }
             else if (line == "USER_END") {
-                if (inUserSection) {
+                if (inUserSection && !username.empty()) {
                     // Create user and add to map
                     auto user = std::make_shared<User>(username, password, -1);
                     user->setInfo(info);
+                    user->setQuietMode(isQuiet);
 
                     // Set wins and losses manually
                     for (int i = 0; i < wins; i++) {
@@ -334,8 +337,6 @@ void loadUsers() {
                     for (int i = 0; i < losses; i++) {
                         user->addLoss();
                     }
-
-                    user->setQuietMode(isQuiet);
 
                     // Add blocked users
                     for (const auto& blockedUser : blockedUsers) {
@@ -360,7 +361,9 @@ void loadUsers() {
                 }
 
                 if (inBlockedSection) {
-                    blockedUsers.push_back(line);
+                    if (!line.empty()) {
+                        blockedUsers.push_back(line);
+                    }
                 }
                 else {
                     // Parse key-value pairs
