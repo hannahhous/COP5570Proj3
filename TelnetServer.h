@@ -223,7 +223,7 @@ private:
     {
         while (running)
         {
-            // Clean up finished games periodically
+            // Clean up finished games
             GameManager::getInstance().cleanupGames();
 
             // Check for disconnected clients
@@ -287,10 +287,10 @@ private:
                     }
                 }
             }
-
-            // Check every second
+            // Sleep for a shorter interval and check running flag more frequently
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
+
     }
 
 private:
