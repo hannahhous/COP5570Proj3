@@ -119,16 +119,18 @@ public:
     void stop()
     {
         running = false;
-
+        std::cout << "accept thread" << std::endl;
         if (acceptThread.joinable())
         {
             acceptThread.join();
         }
+        std::cout << "clenup thread" << std::endl;
 
         if (cleanupThread.joinable())
         {
             cleanupThread.join();
         }
+        std::cout << "game timeout thread" << std::endl;
 
         if (gameTimeoutThread.joinable())
         {
@@ -220,12 +222,52 @@ private:
             std::cout << "New connection from " << clientIP << ":" << ntohs(clientAddr.sin_port) << std::endl;
         }
     }
-
+/*
     void cleanupGames()
     {
+        std::cout << "cleanup games" << std::endl;
+
         while (running)
         {
-            // Clean up finished games periodically
+            // Clean up finished games
+            std::cout << "before game manager creation" << std::endl;
+
+            GameManager::getInstance().cleanupGames();
+
+            // Check for disconnected clients
+            {
+                std::cout << "check for disconnected client" << std::endl;
+
+                std::lock_guard<std::mutex> lock(mutex);
+                auto it = clients.begin();
+                while (it != clients.end())
+                {
+                    if (!(*it)->isConnected())
+                    {
+                        it = clients.erase(it);
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                }
+            }
+
+            // Sleep for a while
+            std::cout << "before sleep" << std::endl;
+
+            std::this_thread::sleep_for(std::chrono::seconds(30));
+        }
+    }
+*/
+    // Modify your cleanupGames method in TelnetServer.h:
+    void cleanupGames()
+    {
+        const int SLEEP_INTERVAL_MS = 1000; // 1 second intervals
+
+        while (running)
+        {
+            // Clean up finished games
             GameManager::getInstance().cleanupGames();
 
             // Check for disconnected clients
@@ -245,11 +287,12 @@ private:
                 }
             }
 
-            // Sleep for a while
-            std::this_thread::sleep_for(std::chrono::seconds(30));
+            // Sleep for a short interval to check running flag more frequently
+            std::this_thread::sleep_for(std::chrono::milliseconds(SLEEP_INTERVAL_MS));
         }
-    }
 
+        std::cout << "Cleanup thread exiting..." << std::endl;
+    }
     void checkGameTimeouts()
     {
         while (running)
@@ -289,10 +332,10 @@ private:
                     }
                 }
             }
-
-            // Check every second
+            // Sleep for a shorter interval and check running flag more frequently
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
+
     }
 
 

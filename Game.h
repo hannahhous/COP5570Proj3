@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include "UserManager.h"
+#include "User.h"
 
 enum class StoneColor { BLACK, WHITE };
 enum class GameStatus { WAITING, PLAYING, FINISHED };
@@ -371,6 +371,8 @@ std::vector<std::shared_ptr<Game>> GameManager::getAllGames() {
 
 void GameManager::cleanupGames() {
     std::lock_guard<std::mutex> lock(gamesMutex);
+
+    std::cout << "in game manager cleanup games" << std::endl;
 
     auto it = games.begin();
     while (it != games.end()) {

@@ -42,6 +42,7 @@ public:
 
     // Getters and setters
     std::string getUsername() const { return username; }
+    std::string getPassword() const { return password; }
     bool checkPassword(const std::string& pwd) const { return password == pwd; }
     void setPassword(const std::string& pwd) { password = pwd; }
     void setInfo(const std::string& newInfo) { info = newInfo; }
