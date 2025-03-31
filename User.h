@@ -42,7 +42,6 @@ public:
 
     // Getters and setters
     std::string getUsername() const { return username; }
-    std::string getPassword() const { return password; }
     bool checkPassword(const std::string& pwd) const { return password == pwd; }
     void setPassword(const std::string& pwd) { password = pwd; }
     void setInfo(const std::string& newInfo) { info = newInfo; }
@@ -247,7 +246,6 @@ public:
 // Replace the saveUsers() and loadUsers() functions in User.h with these improved versions
 
 void saveUsers() {
-  std::cout << "save users" << std::endl;
     std::lock_guard<std::mutex> lock(usersMutex);
 
     try {
